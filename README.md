@@ -8,7 +8,7 @@ A Python CLI and GUI app that takes PDF, image, text, and document files, detect
 - **Command Line** - Powerful CLI for automation and batch processing
 - Processes single files or whole directories
 - Supports: `txt`, `md`, `csv`, `json`, `log`, `docx`, `pdf`, and common images
-- OCR support for scanned PDFs and image files (via Tesseract)
+- **OCR with automatic language detection** - Tesseract OCR with auto-detection for multi-language documents
 - Replaces detected entities with consistent fake values per run
 - Organized multi-file architecture (not a single script)
 
@@ -71,13 +71,13 @@ run_gui.bat            # Windows shortcut
 
 This opens a graphical interface where you can:
 - Browse and select files or folders
-- Configure OCR and output options
+- Configure OCR with automatic language detection
 - See real-time processing progress
 - View results and warnings
 
 **Features:**
 - Drag-and-drop file selection
-- OCR language selection (English, Polish, German, French, Spanish, Italian, Portuguese)
+- **Automatic language detection** (detects `auto`, or select specific languages: English, Polish, German, French, Spanish, Italian, Portuguese)
 - Faker locale selection for realistic fake data
 - Process individual files or entire directories
 - Real-time progress log
@@ -91,11 +91,17 @@ hydemypii INPUT_PATH -o output --ocr
 Examples:
 
 ```bash
-# Process one PDF
+# Process one PDF with automatic language detection
 hydemypii ./invoices/report.pdf -o ./sanitized --ocr
 
 # Process all supported files in a folder
 hydemypii ./documents -o ./sanitized
+
+# Use specific OCR language (instead of automatic detection)
+hydemypii ./documents -o ./sanitized --ocr --ocr-lang eng
+
+# Process multi-language document with auto-detection
+hydemypii ./mixed_lang.pdf -o ./sanitized --ocr --ocr-lang auto
 
 # Try all files, even unknown extensions
 hydemypii ./documents -o ./sanitized --all-files --ocr

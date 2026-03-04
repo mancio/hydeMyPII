@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", help="Input file or directory path")
     parser.add_argument("-o", "--output", default="output", help="Output directory")
     parser.add_argument("--ocr", action="store_true", help="Enable OCR for images and scanned PDFs")
-    parser.add_argument("--ocr-lang", default="eng", help="Tesseract language code (default: eng)")
+    parser.add_argument("--ocr-lang", default="auto", help="Tesseract language code (default: auto) - use 'auto' for automatic detection, or codes like 'eng', 'pol', 'deu'")
     parser.add_argument("--poppler-path", help="Explicit path to Poppler bin directory (for PDF OCR)")
     parser.add_argument("--locale", default="en_US", help="Faker locale (default: en_US)")
     parser.add_argument(

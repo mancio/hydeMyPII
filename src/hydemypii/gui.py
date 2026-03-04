@@ -79,11 +79,11 @@ class HydeMyPIIGUI:
         )
 
         ttk.Label(options_frame, text="OCR Language:").grid(row=2, column=0, sticky=tk.W, pady=5, padx=(0, 10))
-        self.ocr_lang_var = tk.StringVar(value="eng")
+        self.ocr_lang_var = tk.StringVar(value="auto")
         ocr_lang_combo = ttk.Combobox(
             options_frame,
             textvariable=self.ocr_lang_var,
-            values=["eng", "pol", "deu", "fra", "spa", "ita", "por"],
+            values=["auto", "eng", "pol", "deu", "fra", "spa", "ita", "por"],
             width=10,
             state="readonly",
         )

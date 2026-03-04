@@ -108,6 +108,93 @@ def _resolve_tesseract_cmd() -> str | None:
     return None
 
 
+def _has_meaningful_text(text: str, min_alphanum: int = 50) -> bool:
+    """Check if text contains meaningful content (not just whitespace/symbols)."""
+    if not text:
+        return False
+    alphanum_count = sum(1 for char in text if char.isalnum())
+    return alphanum_count >= min_alphanum
+
+
+# Mapping from langdetect ISO 639-1 codes to Tesseract language codes
+_LANG_DETECT_TO_TESSERACT = {
+    "en": "eng",
+    "pl": "pol",
+    "de": "deu",
+    "fr": "fra",
+    "es": "spa",
+    "it": "ita",
+    "pt": "por",
+    "nl": "nld",
+    "ru": "rus",
+    "ar": "ara",
+    "zh-cn": "chi_sim",
+    "zh-tw": "chi_tra",
+    "ja": "jpn",
+    "ko": "kor",
+    "tr": "tur",
+    "cs": "ces",
+    "da": "dan",
+    "fi": "fin",
+    "el": "ell",
+    "he": "heb",
+    "hi": "hin",
+    "hu": "hun",
+    "id": "ind",
+    "no": "nor",
+    "ro": "ron",
+    "sk": "slk",
+    "sv": "swe",
+    "th": "tha",
+    "uk": "ukr",
+    "vi": "vie",
+}
+
+
+def _detect_languages(text: str, max_languages: int = 3) -> str:
+    """
+    Detect language(s) from text and return Tesseract language codes.
+    
+    Args:
+        text: The text to analyze
+        max_languages: Maximum number of languages to detect (default: 3)
+    
+    Returns:
+        Tesseract language code(s), e.g., "eng" or "eng+pol+deu" for multi-language.
+        Returns "eng" as fallback if detection fails.
+    """
+    if not text or not text.strip():
+        return "eng"  # Default fallback
+    
+    try:
+        from langdetect import detect_langs, LangDetectException
+    except ImportError:
+        return "eng"  # Fallback if langdetect not available
+    
+    try:
+        # detect_langs returns list of Language objects with lang code and probability
+        detected = detect_langs(text)
+        
+        # Filter by minimum probability and limit to max_languages
+        languages = []
+        for lang_obj in detected[:max_languages]:
+            if lang_obj.prob > 0.1:  # Only include if >10% probability
+                lang_code = lang_obj.lang.lower()
+                tesseract_code = _LANG_DETECT_TO_TESSERACT.get(lang_code)
+                if tesseract_code and tesseract_code not in languages:
+                    languages.append(tesseract_code)
+        
+        if languages:
+            return "+".join(languages)
+        
+    except LangDetectException:
+        pass  # Fall through to default
+    except Exception:
+        pass  # Fall through to default
+    
+    return "eng"  # Default fallback
+
+
 def _pdf_ocr_error_message(exc: Exception) -> str:
     base = f"PDF OCR conversion failed: {exc}"
     message_lower = str(exc).lower()
@@ -195,13 +282,22 @@ def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str
         extracted_pages.append(page.extract_text() or "")
 
     text = "\n\n".join(extracted_pages).strip()
-    if text:
+    
+    # Check if extracted text is meaningful (not just whitespace/garbage)
+    if _has_meaningful_text(text):
         return ExtractionResult(source_path=path, text=text, used_ocr=False)
 
     if not ocr_enabled:
-        warnings.append("No machine-readable text found in PDF. Re-run with --ocr.")
+        msg = "No readable text found in PDF (possibly scanned). Re-run with --ocr."
+        if text:
+            msg += f" (Extracted {len(text)} chars but insufficient readable content)"
+        warnings.append(msg)
         return ExtractionResult(source_path=path, text="", used_ocr=False, warnings=warnings)
 
+    # Fallback to OCR for scanned PDFs
+    if text:
+        warnings.append(f"PDF text extraction returned {len(text)} chars but insufficient readable content. Using OCR.")
+    
     ocr_result = _extract_pdf_with_ocr(path, ocr_lang=ocr_lang, poppler_path=poppler_path)
     ocr_result.warnings.extend(warnings)
     return ocr_result
@@ -236,10 +332,11 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
 
     try:
+        # Use higher DPI for better OCR accuracy (300 is standard for documents)
         if poppler_bin:
-            images = convert_from_path(str(path), poppler_path=poppler_bin)
+            images = convert_from_path(str(path), dpi=300, poppler_path=poppler_bin)
         else:
-            images = convert_from_path(str(path))
+            images = convert_from_path(str(path), dpi=300)
     except Exception as exc:
         details = _pdf_ocr_error_message(exc)
         if not poppler_bin and platform.system() == "Windows":
@@ -252,9 +349,40 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
         )
 
     pages_text: list[str] = []
+    detected_lang: str | None = None
+    
     try:
-        for image in images:
-            pages_text.append(pytesseract.image_to_string(image, lang=ocr_lang))
+        for idx, image in enumerate(images, 1):
+            # Apply basic preprocessing for better OCR
+            try:
+                from PIL import ImageEnhance
+                
+                # Convert to grayscale
+                if image.mode != "L":
+                    image = image.convert("L")
+                
+                # Enhance contrast slightly
+                enhancer = ImageEnhance.Contrast(image)
+                image = enhancer.enhance(1.5)
+            except Exception:
+                pass  # Continue with original image if preprocessing fails
+            
+            # Use language detection if requested
+            current_lang = ocr_lang
+            if not ocr_lang or ocr_lang.lower() == "auto":
+                if detected_lang is None:
+                    # Quick OCR pass to get sample text for detection
+                    sample_text = pytesseract.image_to_string(image, lang="eng")
+                    if sample_text.strip():
+                        detected_lang = _detect_languages(sample_text)
+                        warnings.append(f"Auto-detected language(s): {detected_lang}")
+                    else:
+                        detected_lang = "eng"
+                current_lang = detected_lang
+            
+            page_text = pytesseract.image_to_string(image, lang=current_lang)
+            pages_text.append(page_text)
+            
     except pytesseract.TesseractNotFoundError:
         msg = "Tesseract OCR is not installed or not in PATH."
         if platform.system() == "Windows":
@@ -277,14 +405,20 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
 
     text = "\n\n".join(pages_text).strip()
     if not text:
-        warnings.append("OCR ran but no text was recognized.")
+        # Use the detected language if auto-detection was used, otherwise use the specified one
+        lang_used = detected_lang if detected_lang else ocr_lang
+        warnings.append(
+            f"OCR ran on {len(images)} page(s) but no text was recognized. "
+            f"Check: 1) OCR language setting (current: {lang_used}), "
+            "2) document quality/resolution, 3) document might be in a different language."
+        )
 
     return ExtractionResult(source_path=path, text=text, used_ocr=True, warnings=warnings)
 
 
 def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
     try:
-        from PIL import Image
+        from PIL import Image, ImageEnhance
     except ImportError:
         return ExtractionResult(source_path=path, text="", warnings=["Pillow is not installed."])
 
@@ -299,8 +433,47 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
 
     try:
         image = Image.open(path)
-        text = pytesseract.image_to_string(image, lang=ocr_lang)
-        return ExtractionResult(source_path=path, text=text, used_ocr=True)
+        
+        # Apply basic preprocessing for better OCR
+        try:
+            # Convert to grayscale
+            if image.mode != "L":
+                image = image.convert("L")
+            
+            # Enhance contrast
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(1.5)
+        except Exception:
+            pass  # Continue with original if preprocessing fails
+        
+        # Use language detection if requested
+        current_lang = ocr_lang
+        warnings: list[str] = []
+        
+        if not ocr_lang or ocr_lang.lower() == "auto":
+            # Quick OCR pass with English to get sample text for detection
+            sample_text = pytesseract.image_to_string(image, lang="eng")
+            if sample_text.strip():
+                current_lang = _detect_languages(sample_text)
+                warnings.append(f"Auto-detected language(s): {current_lang}")
+            else:
+                current_lang = "eng"
+        
+        text = pytesseract.image_to_string(image, lang=current_lang)
+        
+        if not text.strip():
+            return ExtractionResult(
+                source_path=path,
+                text="",
+                used_ocr=True,
+                warnings=[
+                    f"OCR ran but no text was recognized. "
+                    f"Check: 1) OCR language (current: {current_lang}), "
+                    "2) image quality, 3) image might be in a different language."
+                ],
+            )
+        
+        return ExtractionResult(source_path=path, text=text, used_ocr=True, warnings=warnings)
     except pytesseract.TesseractNotFoundError:
         msg = "Tesseract OCR is not installed or not in PATH."
         if platform.system() == "Windows":
