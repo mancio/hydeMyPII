@@ -214,6 +214,54 @@ def _pdf_ocr_error_message(exc: Exception) -> str:
     )
 
 
+def _preprocess_image_for_ocr(image):
+    """Apply aggressive preprocessing to improve OCR on scanned documents.
+    
+    Handles low-quality, skewed, or faded scans by:
+    - Grayscale conversion for better text detection
+    - Aggressive contrast enhancement (2.5x)
+    - Brightness adjustment for dark/light scans
+    - Sharpness enhancement for crisper text edges
+    - Median filtering to reduce noise
+    - Histogram equalization for better contrast
+    """
+    try:
+        from PIL import ImageEnhance, ImageFilter, ImageOps
+        
+        # Convert to grayscale if not already
+        if image.mode != "L":
+            image = image.convert("L")
+        
+        # Apply aggressive contrast enhancement for faded scans
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(2.5)  # Balanced aggressiveness
+        
+        # Correct brightness for very dark or washed out scans
+        enhancer = ImageEnhance.Brightness(image)
+        image = enhancer.enhance(1.15)
+        
+        # Sharpen to make text edges crisper
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(2.0)
+        
+        # Apply median filter for noise reduction
+        try:
+            image = image.filter(ImageFilter.MedianFilter(size=3))
+        except Exception:
+            pass  # MedianFilter might not be available
+        
+        # Try to auto-level (normalize histogram) for better contrast
+        try:
+            image = ImageOps.autocontrast(image, cutoff=5)
+        except Exception:
+            pass
+        
+        return image
+    except Exception:
+        # If any enhancement fails, return the image as-is
+        return image
+
+
 def extract_text(path: Path, ocr_enabled: bool, ocr_lang: str = "eng", poppler_path: str | None = None) -> ExtractionResult:
     suffix = path.suffix.lower()
 
@@ -353,26 +401,15 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
     
     try:
         for idx, image in enumerate(images, 1):
-            # Apply basic preprocessing for better OCR
-            try:
-                from PIL import ImageEnhance
-                
-                # Convert to grayscale
-                if image.mode != "L":
-                    image = image.convert("L")
-                
-                # Enhance contrast slightly
-                enhancer = ImageEnhance.Contrast(image)
-                image = enhancer.enhance(1.5)
-            except Exception:
-                pass  # Continue with original image if preprocessing fails
+            # Apply aggressive preprocessing for better OCR on scanned documents
+            image = _preprocess_image_for_ocr(image)
             
             # Use language detection if requested
             current_lang = ocr_lang
             if not ocr_lang or ocr_lang.lower() == "auto":
                 if detected_lang is None:
                     # Quick OCR pass to get sample text for detection
-                    sample_text = pytesseract.image_to_string(image, lang="eng")
+                    sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
                     if sample_text.strip():
                         detected_lang = _detect_languages(sample_text)
                         warnings.append(f"Auto-detected language(s): {detected_lang}")
@@ -380,7 +417,11 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
                         detected_lang = "eng"
                 current_lang = detected_lang
             
-            page_text = pytesseract.image_to_string(image, lang=current_lang)
+            page_text = pytesseract.image_to_string(
+                image, 
+                lang=current_lang,
+                config="--psm 6"  # PSM 6: Assume single column of text (better for documents)
+            )
             pages_text.append(page_text)
             
     except pytesseract.TesseractNotFoundError:
@@ -434,17 +475,16 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
     try:
         image = Image.open(path)
         
-        # Apply basic preprocessing for better OCR
-        try:
-            # Convert to grayscale
-            if image.mode != "L":
-                image = image.convert("L")
-            
-            # Enhance contrast
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(1.5)
-        except Exception:
-            pass  # Continue with original if preprocessing fails
+        # Upscale very small images (width < 800px) for better OCR
+        # Tesseract requires adequate resolution to recognize text reliably
+        if image.width < 800:
+            scale_factor = max(2, 800 // image.width)
+            new_width = image.width * scale_factor
+            new_height = image.height * scale_factor
+            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        
+        # Apply aggressive preprocessing for better OCR on scanned documents
+        image = _preprocess_image_for_ocr(image)
         
         # Use language detection if requested
         current_lang = ocr_lang
@@ -452,14 +492,18 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         
         if not ocr_lang or ocr_lang.lower() == "auto":
             # Quick OCR pass with English to get sample text for detection
-            sample_text = pytesseract.image_to_string(image, lang="eng")
+            sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
             if sample_text.strip():
                 current_lang = _detect_languages(sample_text)
                 warnings.append(f"Auto-detected language(s): {current_lang}")
             else:
                 current_lang = "eng"
         
-        text = pytesseract.image_to_string(image, lang=current_lang)
+        text = pytesseract.image_to_string(
+            image, 
+            lang=current_lang,
+            config="--psm 6"  # PSM 6: Assume single column of text (better for documents)
+        )
         
         if not text.strip():
             return ExtractionResult(
