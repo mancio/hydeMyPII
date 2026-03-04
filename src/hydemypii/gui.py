@@ -5,6 +5,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from hydemypii.extractor import _get_available_languages
+
 
 class HydeMyPIIGUI:
     def __init__(self, root: tk.Tk) -> None:
@@ -80,14 +82,29 @@ class HydeMyPIIGUI:
 
         ttk.Label(options_frame, text="OCR Language:").grid(row=2, column=0, sticky=tk.W, pady=5, padx=(0, 10))
         self.ocr_lang_var = tk.StringVar(value="auto")
+        
+        # Get available languages and build dropdown list
+        available_langs = _get_available_languages()
+        lang_list = ["auto"] + sorted(available_langs)
+        
         ocr_lang_combo = ttk.Combobox(
             options_frame,
             textvariable=self.ocr_lang_var,
-            values=["auto", "eng", "pol", "deu", "fra", "spa", "ita", "por"],
+            values=lang_list,
             width=10,
             state="readonly",
         )
         ocr_lang_combo.grid(row=2, column=1, sticky=tk.W, pady=5)
+        
+        # Add note about available languages if limited
+        if len(available_langs) <= 1:
+            lang_note = ttk.Label(
+                options_frame,
+                text=f"Available: {', '.join(sorted(available_langs))}. Add more: see README",
+                font=("Arial", 8),
+                foreground="gray"
+            )
+            lang_note.grid(row=2, column=2, sticky=tk.W, padx=5)
 
         ttk.Label(options_frame, text="Faker Locale:").grid(row=3, column=0, sticky=tk.W, pady=5, padx=(0, 10))
         self.locale_var = tk.StringVar(value="en_US")

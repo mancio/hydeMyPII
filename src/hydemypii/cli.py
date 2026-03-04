@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from hydemypii.extractor import extract_text
+from hydemypii.extractor import extract_text, _get_available_languages
 from hydemypii.redactor import PIIRedactor
 
 _SUPPORTED_EXTENSIONS = {
@@ -37,7 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input", help="Input file or directory path")
     parser.add_argument("-o", "--output", default="output", help="Output directory")
     parser.add_argument("--ocr", action="store_true", help="Enable OCR for images and scanned PDFs")
-    parser.add_argument("--ocr-lang", default="auto", help="Tesseract language code (default: auto) - use 'auto' for automatic detection, or codes like 'eng', 'pol', 'deu'")
+    available_langs = ", ".join(sorted(_get_available_languages()))
+    parser.add_argument(
+        "--ocr-lang",
+        default="auto",
+        help=f"Tesseract language code (default: auto for automatic detection). Available: {available_langs}. "
+             f"For other languages, add .traineddata files to your Tesseract tessdata folder."
+    )
     parser.add_argument("--poppler-path", help="Explicit path to Poppler bin directory (for PDF OCR)")
     parser.add_argument("--locale", default="en_US", help="Faker locale (default: en_US)")
     parser.add_argument(
