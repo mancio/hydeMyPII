@@ -182,6 +182,7 @@ This opens a graphical interface where you can:
 **Features:**
 - Drag-and-drop file selection
 - **Automatic language detection** - Auto-detects document language or manually select any installed language
+- **OCR mode selector** - Choose page segmentation mode: auto (best guess), single (one block), multi-column (tables/columns), sparse (scattered text)
 - Dynamically shows only available OCR languages (based on installed Tesseract data files)
 - Faker locale selection for realistic fake data
 - Process individual files or entire directories
@@ -207,6 +208,15 @@ hydemypii ./documents -o ./sanitized --ocr --ocr-lang eng
 
 # Process multi-language document with auto-detection
 hydemypii ./mixed_lang.pdf -o ./sanitized --ocr --ocr-lang auto
+
+# Process multi-column document (newspaper, magazine layout)
+hydemypii ./newspaper.pdf -o ./sanitized --ocr --ocr-psm multi-column
+
+# Process form with single text block
+hydemypii ./form.pdf -o ./sanitized --ocr --ocr-psm single
+
+# Process document with scattered text (receipts, labels)
+hydemypii ./receipt.pdf -o ./sanitized --ocr --ocr-psm sparse
 
 # Try all files, even unknown extensions
 hydemypii ./documents -o ./sanitized --all-files --ocr

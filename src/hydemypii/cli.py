@@ -44,6 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Tesseract language code (default: auto for automatic detection). Available: {available_langs}. "
              f"For other languages, add .traineddata files to your Tesseract tessdata folder."
     )
+    parser.add_argument(
+        "--ocr-psm",
+        default="auto",
+        choices=["auto", "single", "multi-column", "sparse"],
+        help="Page segmentation mode: auto=automatic (best guess), single=one text block, "
+             "multi-column=columns/tables, sparse=scattered text (default: auto)"
+    )
     parser.add_argument("--poppler-path", help="Explicit path to Poppler bin directory (for PDF OCR)")
     parser.add_argument("--locale", default="en_US", help="Faker locale (default: en_US)")
     parser.add_argument(
@@ -84,7 +91,13 @@ def main() -> int:
     total_replacements = 0
 
     for file_path in files:
-        extraction = extract_text(file_path, ocr_enabled=args.ocr, ocr_lang=args.ocr_lang, poppler_path=args.poppler_path)
+        extraction = extract_text(
+            file_path, 
+            ocr_enabled=args.ocr, 
+            ocr_lang=args.ocr_lang, 
+            poppler_path=args.poppler_path,
+            ocr_psm=args.ocr_psm
+        )
         if not extraction.text.strip():
             joined = "; ".join(extraction.warnings) if extraction.warnings else "No text extracted"
             print(f"[SKIP] {file_path} -> {joined}")

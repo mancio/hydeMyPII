@@ -106,7 +106,26 @@ class HydeMyPIIGUI:
             )
             lang_note.grid(row=2, column=2, sticky=tk.W, padx=5)
 
-        ttk.Label(options_frame, text="Faker Locale:").grid(row=3, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        ttk.Label(options_frame, text="OCR Mode:").grid(row=3, column=0, sticky=tk.W, pady=5, padx=(0, 10))
+        self.ocr_psm_var = tk.StringVar(value="auto")
+        ocr_psm_combo = ttk.Combobox(
+            options_frame,
+            textvariable=self.ocr_psm_var,
+            values=["auto", "single", "multi-column", "sparse"],
+            width=12,
+            state="readonly",
+        )
+        ocr_psm_combo.grid(row=3, column=1, sticky=tk.W, pady=5)
+        
+        ocr_psm_note = ttk.Label(
+            options_frame,
+            text="auto=best guess, single=one block, multi-column=columns/tables, sparse=scattered text",
+            font=("Arial", 8),
+            foreground="gray"
+        )
+        ocr_psm_note.grid(row=3, column=2, columnspan=2, sticky=tk.W, padx=5)
+
+        ttk.Label(options_frame, text="Faker Locale:").grid(row=4, column=0, sticky=tk.W, pady=5, padx=(0, 10))
         self.locale_var = tk.StringVar(value="en_US")
         locale_combo = ttk.Combobox(
             options_frame,
@@ -115,7 +134,7 @@ class HydeMyPIIGUI:
             width=10,
             state="readonly",
         )
-        locale_combo.grid(row=3, column=1, sticky=tk.W, pady=5)
+        locale_combo.grid(row=4, column=1, sticky=tk.W, pady=5)
 
         # Progress section
         progress_frame = ttk.LabelFrame(self.root, text="Progress", padding="10")
@@ -231,6 +250,7 @@ class HydeMyPIIGUI:
                         ocr_enabled=self.ocr_var.get(),
                         ocr_lang=self.ocr_lang_var.get(),
                         poppler_path=None,
+                        ocr_psm=self.ocr_psm_var.get(),
                     )
 
                     if not extraction.text.strip():

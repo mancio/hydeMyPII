@@ -379,7 +379,23 @@ def _preprocess_image_for_ocr(image):
         return image
 
 
-def extract_text(path: Path, ocr_enabled: bool, ocr_lang: str = "eng", poppler_path: str | None = None) -> ExtractionResult:
+def extract_text(
+    path: Path, 
+    ocr_enabled: bool, 
+    ocr_lang: str = "eng", 
+    poppler_path: str | None = None,
+    ocr_psm: str = "auto"
+) -> ExtractionResult:
+    """
+    Extract text from various file formats.
+    
+    Args:
+        path: Path to file
+        ocr_enabled: Enable OCR for images and scanned PDFs
+        ocr_lang: Tesseract language code (e.g., 'eng', 'pol', 'auto')
+        poppler_path: Path to Poppler binaries
+        ocr_psm: Page segmentation mode ('auto', 'single', 'multi-column', 'sparse')
+    """
     suffix = path.suffix.lower()
 
     if suffix in _TEXT_EXTENSIONS:
@@ -387,7 +403,7 @@ def extract_text(path: Path, ocr_enabled: bool, ocr_lang: str = "eng", poppler_p
     if suffix == ".docx":
         return _extract_docx(path)
     if suffix == ".pdf":
-        return _extract_pdf(path, ocr_enabled=ocr_enabled, ocr_lang=ocr_lang, poppler_path=poppler_path)
+        return _extract_pdf(path, ocr_enabled=ocr_enabled, ocr_lang=ocr_lang, poppler_path=poppler_path, ocr_psm=ocr_psm)
     if suffix in _IMAGE_EXTENSIONS:
         if not ocr_enabled:
             return ExtractionResult(
@@ -396,7 +412,7 @@ def extract_text(path: Path, ocr_enabled: bool, ocr_lang: str = "eng", poppler_p
                 used_ocr=False,
                 warnings=["Image input requires --ocr to be enabled."],
             )
-        return _extract_image_ocr(path, ocr_lang=ocr_lang)
+        return _extract_image_ocr(path, ocr_lang=ocr_lang, ocr_psm=ocr_psm)
 
     return ExtractionResult(
         source_path=path,
@@ -429,7 +445,7 @@ def _extract_docx(path: Path) -> ExtractionResult:
     return ExtractionResult(source_path=path, text=text)
 
 
-def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str | None = None) -> ExtractionResult:
+def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str | None = None, ocr_psm: str = "auto") -> ExtractionResult:
     warnings: list[str] = []
 
     try:
@@ -464,11 +480,11 @@ def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str
         warnings.append(f"PDF text extraction returned {len(text)} chars but insufficient readable content. Using OCR.")
     
     # Try OCRmyPDF first (better quality for PDFs)
-    ocr_result = _extract_pdf_with_ocrmypdf(path, ocr_lang=ocr_lang)
+    ocr_result = _extract_pdf_with_ocrmypdf(path, ocr_lang=ocr_lang, ocr_psm=ocr_psm)
     
     # If OCRmyPDF fails or is unavailable, fall back to pdf2image + pytesseract
     if not ocr_result.text.strip() or ocr_result.warnings:
-        fallback_result = _extract_pdf_with_pytesseract(path, ocr_lang=ocr_lang, poppler_path=poppler_path)
+        fallback_result = _extract_pdf_with_pytesseract(path, ocr_lang=ocr_lang, poppler_path=poppler_path, ocr_psm=ocr_psm)
         # Merge warnings from both attempts
         ocr_result.warnings.extend(fallback_result.warnings)
         # Use fallback text if OCRmyPDF produced nothing
@@ -479,7 +495,7 @@ def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str
     return ocr_result
 
 
-def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None) -> ExtractionResult:
+def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None, ocr_psm: str = "auto") -> ExtractionResult:
     """
     Extract text from PDF using OCRmyPDF (preferred method for PDFs).
     OCRmyPDF adds a text layer to the PDF, preserving document structure.
@@ -522,7 +538,7 @@ def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None) -> Extra
             optimize=0,       # No optimization (faster)
             progress_bar=False,
             use_threads=True,
-            tesseract_pagesegmode=6,  # PSM 6: Single uniform block (best for most documents)
+            tesseract_pagesegmode=_get_psm_value(ocr_psm),  # User-configurable PSM mode
         )
         
         # Extract text from OCR'd PDF
@@ -570,15 +586,32 @@ def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None) -> Extra
                 pass
 
 
-def _build_tesseract_config(base_config: str = "--psm 6 --oem 3") -> str:
+def _get_psm_value(ocr_psm: str) -> int:
+    """
+    Convert user-friendly PSM mode to Tesseract PSM value.
+    
+    Args:
+        ocr_psm: User-friendly mode name
+        
+    Returns:
+        Tesseract PSM integer value
+    """
+    psm_mapping = {
+        "auto": 3,          # Fully automatic page segmentation (good default)
+        "single": 6,        # Single uniform block of text
+        "multi-column": 3,  # Multiple columns (same as auto)
+        "sparse": 11,       # Sparse text (find as much text as possible)
+    }
+    return psm_mapping.get(ocr_psm, 3)  # Default to auto (PSM 3)
+
+
+def _build_tesseract_config(ocr_psm: str = "auto") -> str:
     """
     Build Tesseract config string. 
     TESSDATA_PREFIX env var handles the data directory location.
-    
-    PSM 6 = Assume a single uniform block of text (best for most documents)
-    OEM 3 = Default OCR Engine Mode (both legacy and LSTM)
     """
-    return base_config
+    psm_value = _get_psm_value(ocr_psm)
+    return f"--psm {psm_value} --oem 3"
 
 
 def _build_tesseract_config_multicolumn(base_config: str = "--psm 3 --oem 3") -> str:
@@ -591,7 +624,7 @@ def _build_tesseract_config_multicolumn(base_config: str = "--psm 3 --oem 3") ->
     return base_config
 
 
-def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str | None = None) -> ExtractionResult:
+def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str | None = None, ocr_psm: str = "auto") -> ExtractionResult:
     warnings: list[str] = []
     poppler_bin = _resolve_poppler_bin_dir(override_path=poppler_path)
 
@@ -649,7 +682,7 @@ def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str |
             if not ocr_lang or ocr_lang.lower() == "auto":
                 if detected_lang is None:
                     # Quick OCR pass to get sample text for detection
-                    sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config())
+                    sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config("auto"))
                     if sample_text.strip():
                         detected_lang = _detect_languages(sample_text)
                         # Filter to only available languages
@@ -665,11 +698,11 @@ def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str |
                     warnings.append(f"Language(s) {current_lang} not available. Using: {filtered}")
                 current_lang = filtered
             
-            # Use PSM 3 for image-based OCR to better handle multi-column layouts
+            # Use configured PSM mode for image-based OCR
             page_text = pytesseract.image_to_string(
                 image, 
                 lang=current_lang,
-                config=_build_tesseract_config_multicolumn()  # PSM 3 for multi-column support
+                config=_build_tesseract_config(ocr_psm)
             )
             pages_text.append(page_text)
             
@@ -706,7 +739,7 @@ def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str |
     return ExtractionResult(source_path=path, text=text, used_ocr=True, warnings=warnings)
 
 
-def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
+def _extract_image_ocr(path: Path, ocr_lang: str, ocr_psm: str = "auto") -> ExtractionResult:
     try:
         from PIL import Image, ImageEnhance
     except ImportError:
@@ -741,7 +774,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         
         if not ocr_lang or ocr_lang.lower() == "auto":
             # Quick OCR pass with English to get sample text for detection
-            sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config())
+            sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config("auto"))
             if sample_text.strip():
                 current_lang = _detect_languages(sample_text)
                 # Filter to only available languages
@@ -759,7 +792,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         text = pytesseract.image_to_string(
             image, 
             lang=current_lang,
-            config=_build_tesseract_config()  # Includes tessdata-dir and PSM/OEM settings
+            config=_build_tesseract_config(ocr_psm)
         )
         
         if not text.strip():
