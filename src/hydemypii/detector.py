@@ -21,7 +21,7 @@ _ENTITY_PATTERNS: dict[str, re.Pattern[str]] = {
     "credit_card": re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
     "ipv4": re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
     "iban": re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b"),
-    "person_name": re.compile(r"\b[A-Z][A-Z]{2,}\b"),
+    "person_name": re.compile(r"\b[A-Z][a-z]{1,}(?:[A-Z][a-z]+)*\b|\b[A-Z][A-Z]{2,}\b"),
 }
 
 
