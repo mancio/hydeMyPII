@@ -1,9 +1,11 @@
 # Hyde My PII
 
-A Python CLI app that takes PDF, image, text, and document files, detects sensitive information, and replaces it with realistic fake data.
+A Python CLI and GUI app that takes PDF, image, text, and document files, detects sensitive information, and replaces it with realistic fake data.
 
 ## Features
 
+- **Graphical Interface** - Easy-to-use GUI for drag-and-drop file processing
+- **Command Line** - Powerful CLI for automation and batch processing
 - Processes single files or whole directories
 - Supports: `txt`, `md`, `csv`, `json`, `log`, `docx`, `pdf`, and common images
 - OCR support for scanned PDFs and image files (via Tesseract)
@@ -55,6 +57,33 @@ If auto-detection fails, you can set:
 
 ## Usage
 
+### GUI Mode (Easy)
+
+```bash
+hydemypii-gui
+```
+
+Or alternatively:
+```bash
+python run_gui.py      # Cross-platform
+run_gui.bat            # Windows shortcut
+```
+
+This opens a graphical interface where you can:
+- Browse and select files or folders
+- Configure OCR and output options
+- See real-time processing progress
+- View results and warnings
+
+**Features:**
+- Drag-and-drop file selection
+- OCR language selection (English, Polish, German, French, Spanish, Italian, Portuguese)
+- Faker locale selection for realistic fake data
+- Process individual files or entire directories
+- Real-time progress log
+
+### Command Line Mode (Advanced)
+
 ```bash
 hydemypii INPUT_PATH -o output --ocr
 ```
@@ -82,12 +111,13 @@ Output files are written as `.sanitized.txt` into the output directory.
 ```text
 src/hydemypii/
   __main__.py
-  cli.py
-  detector.py
-  extractor.py
-  faker_engine.py
-  redactor.py
-  types.py
+  cli.py           # Command-line interface
+  gui.py           # Graphical interface
+  detector.py      # PII detection patterns
+  extractor.py     # Text extraction + OCR
+  faker_engine.py  # Fake data generation
+  redactor.py      # PII replacement engine
+  types.py         # Data structures
 ```
 
 ## Notes

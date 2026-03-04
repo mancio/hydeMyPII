@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hyde-my-pii"
 version = "0.1.0"
-description = "CLI app to detect and replace sensitive data in text, documents, PDFs and images"
+description = "CLI and GUI app to detect and replace sensitive data in text, documents, PDFs and images"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 hydemypii = "hydemypii.cli:main"
+hydemypii-gui = "hydemypii.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
