@@ -295,9 +295,11 @@ def _preprocess_image_for_ocr(image):
     - Sharpness enhancement for crisper text edges
     - Median filtering to reduce noise
     - Histogram equalization for better contrast
+    - Thresholding for extremely poor quality scans
     """
     try:
         from PIL import ImageEnhance, ImageFilter, ImageOps
+        import numpy as np
         
         # Convert to grayscale if not already
         if image.mode != "L":
@@ -325,6 +327,24 @@ def _preprocess_image_for_ocr(image):
         try:
             image = ImageOps.autocontrast(image, cutoff=5)
         except Exception:
+            pass
+        
+        # For extremely poor quality scans, apply adaptive thresholding
+        # to convert to pure black and white, eliminating gray noise
+        try:
+            img_array = np.array(image)
+            # Use automatic threshold around median pixel value
+            # This preserves text while removing faint noise
+            threshold = np.median(img_array)
+            # Adjust threshold slightly lower to preserve more text
+            threshold = max(int(threshold - 20), 40)
+            
+            # Apply binary threshold: pixels > threshold become white, else black
+            img_array = np.where(img_array > threshold, 255, 0).astype(np.uint8)
+            from PIL import Image as PILImage
+            image = PILImage.fromarray(img_array, mode="L")
+        except Exception:
+            # If thresholding fails, continue with current preprocessed image
             pass
         
         return image
@@ -480,7 +500,7 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
             if not ocr_lang or ocr_lang.lower() == "auto":
                 if detected_lang is None:
                     # Quick OCR pass to get sample text for detection
-                    sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
+                    sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6 --oem 3")
                     if sample_text.strip():
                         detected_lang = _detect_languages(sample_text)
                         # Filter to only available languages
@@ -499,7 +519,7 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
             page_text = pytesseract.image_to_string(
                 image, 
                 lang=current_lang,
-                config="--psm 6"  # PSM 6: Assume single column of text (better for documents)
+                config="--psm 6 --oem 3"  # PSM 6: single column, OEM 3: both legacy and LSTM
             )
             pages_text.append(page_text)
             
@@ -571,7 +591,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         
         if not ocr_lang or ocr_lang.lower() == "auto":
             # Quick OCR pass with English to get sample text for detection
-            sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
+            sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6 --oem 3")
             if sample_text.strip():
                 current_lang = _detect_languages(sample_text)
                 # Filter to only available languages
@@ -589,7 +609,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         text = pytesseract.image_to_string(
             image, 
             lang=current_lang,
-            config="--psm 6"  # PSM 6: Assume single column of text (better for documents)
+            config="--psm 6 --oem 3"  # PSM 6: single column, OEM 3: both legacy and LSTM
         )
         
         if not text.strip():
