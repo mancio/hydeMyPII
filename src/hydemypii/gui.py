@@ -10,13 +10,18 @@ class HydeMyPIIGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Hyde My PII - Sanitize Documents")
-        self.root.geometry("800x650")
+        self.root.geometry("850x650")
         self.root.resizable(True, True)
 
         self._setup_ui()
         self._processing = False
 
     def _setup_ui(self) -> None:
+        # Status bar - pack first so it stays at bottom
+        self.status_var = tk.StringVar(value="Ready")
+        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
+        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
         # Header
         header_frame = ttk.Frame(self.root, padding="10")
         header_frame.pack(fill=tk.X)
@@ -123,11 +128,6 @@ class HydeMyPIIGUI:
 
         ttk.Button(action_frame, text="Clear Log", command=self._clear_log).pack(side=tk.LEFT, padx=5)
         ttk.Button(action_frame, text="Exit", command=self.root.quit).pack(side=tk.RIGHT, padx=5)
-
-        # Status bar
-        self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(fill=tk.X, side=tk.BOTTOM)
 
     def _browse_file(self) -> None:
         filename = filedialog.askopenfilename(
