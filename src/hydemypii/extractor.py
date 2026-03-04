@@ -522,6 +522,7 @@ def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None) -> Extra
             optimize=0,       # No optimization (faster)
             progress_bar=False,
             use_threads=True,
+            tesseract_pagesegmode=6,  # PSM 6: Single uniform block (best for most documents)
         )
         
         # Extract text from OCR'd PDF
@@ -573,6 +574,19 @@ def _build_tesseract_config(base_config: str = "--psm 6 --oem 3") -> str:
     """
     Build Tesseract config string. 
     TESSDATA_PREFIX env var handles the data directory location.
+    
+    PSM 6 = Assume a single uniform block of text (best for most documents)
+    OEM 3 = Default OCR Engine Mode (both legacy and LSTM)
+    """
+    return base_config
+
+
+def _build_tesseract_config_multicolumn(base_config: str = "--psm 3 --oem 3") -> str:
+    """
+    Build Tesseract config for multi-column layouts.
+    
+    PSM 3 = Fully automatic page segmentation (handles multi-column layouts better)
+    OEM 3 = Default OCR Engine Mode (both legacy and LSTM)
     """
     return base_config
 
@@ -651,10 +665,11 @@ def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str |
                     warnings.append(f"Language(s) {current_lang} not available. Using: {filtered}")
                 current_lang = filtered
             
+            # Use PSM 3 for image-based OCR to better handle multi-column layouts
             page_text = pytesseract.image_to_string(
                 image, 
                 lang=current_lang,
-                config=_build_tesseract_config()  # Includes tessdata-dir and PSM/OEM settings
+                config=_build_tesseract_config_multicolumn()  # PSM 3 for multi-column support
             )
             pages_text.append(page_text)
             

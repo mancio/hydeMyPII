@@ -120,14 +120,18 @@ If auto-detection doesn't work well, you can manually specify language with `--o
 
 ✅ **Better accuracy** - OCRmyPDF produces higher quality text extraction than image-based OCR  
 ✅ **Preserves structure** - Maintains document layout and formatting  
+✅ **Multi-column support** - pytesseract fallback uses PSM 3 mode for better column detection 
 ✅ **Faster processing** - Optimized specifically for PDF documents  
 ✅ **Multi-language support** - Same language detection as Tesseract  
 ✅ **Automatic fallback** - If OCRmyPDF fails, falls back to pytesseract + pdf2image
 
 **How it works:**
 1. When you run OCR on a PDF, OCRmyPDF adds an invisible text layer
-2. Text is extracted from the enhanced PDF using pypdf
-3. If OCRmyPDF isn't available or fails, the app automatically uses the traditional image-based method
+2. Uses PSM 6 (single uniform block) for most documents - works great for forms, certificates, letters
+3. If OCRmyPDF encounters issues, falls back to pytesseract with PSM 3 (automatic page segmentation) for better multi-column handling
+4. Text is extracted from the enhanced PDF using pypdf, preserving reading order
+
+**Multi-column documents:** The app handles multi-column layouts (newspapers, magazines) automatically in fallback mode. For best results with complex layouts, ensure Tesseract and Poppler are properly installed.
 
 **Requirements:** OCRmyPDF requires Tesseract (already installed from setup instructions above). The app handles everything automatically.
 
