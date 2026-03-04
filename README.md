@@ -50,6 +50,28 @@ tesseract --version
 pdftoppm -h
 ```
 
+### Installing additional OCR languages
+
+By default, Tesseract only includes English language data. To support other languages, you need to add training data files:
+
+**Option 1: Download from Tesseract GitHub** (recommended)
+1. Go to: https://github.com/UB-Mannheim/tesseract/wiki#languages
+2. Download the `.traineddata` files for the languages you need (e.g., `pol.traineddata`, `deu.traineddata`)
+3. Place them in: `C:\Program Files\Tesseract-OCR\tessdata\`
+
+**Option 2: Use environment variable (advanced)**
+- Set `TESSDATA_PREFIX` environment variable to your custom tessdata directory
+- Example: `$env:TESSDATA_PREFIX = "C:\path\to\your\tessdata"`
+
+**Available languages:** The app will auto-detect and fall back to English if a language's training data is missing. Check what languages you have installed with:
+```powershell
+ls "C:\Program Files\Tesseract-OCR\tessdata\*.traineddata"
+```
+
+### Automatic language detection
+
+The app automatically detects document languages when using `--ocr` or the GUI with "auto" language setting (default). If a detected language's training data is unavailable, it gracefully falls back to English.
+
 If auto-detection fails, you can set:
 - `TESSERACT_CMD` environment variable to your `tesseract.exe` path
 - `POPPLER_PATH` environment variable to your Poppler `bin` folder

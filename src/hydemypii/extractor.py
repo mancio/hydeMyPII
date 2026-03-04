@@ -108,6 +108,77 @@ def _resolve_tesseract_cmd() -> str | None:
     return None
 
 
+def _get_tessdata_path() -> Path | None:
+    """Find the tessdata directory containing Tesseract language files."""
+    # Check TESSDATA_PREFIX environment variable first
+    tessdata_env = os.environ.get("TESSDATA_PREFIX")
+    if tessdata_env:
+        tessdata_path = Path(tessdata_env)
+        if tessdata_path.is_dir():
+            return tessdata_path
+    
+    # Check common Tesseract installation paths
+    candidates = [
+        Path("C:\\Program Files\\Tesseract-OCR\\tessdata"),
+        Path("C:\\Program Files (x86)\\Tesseract-OCR\\tessdata"),
+    ]
+    
+    program_files = os.environ.get("ProgramFiles")
+    if program_files:
+        candidates.append(Path(program_files) / "Tesseract-OCR" / "tessdata")
+    
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if program_files_x86:
+        candidates.append(Path(program_files_x86) / "Tesseract-OCR" / "tessdata")
+    
+    for path in candidates:
+        if path.is_dir():
+            return path
+    
+    return None
+
+
+def _get_available_languages() -> set[str]:
+    """Get set of language codes that have training data available."""
+    tessdata_path = _get_tessdata_path()
+    if not tessdata_path:
+        return {"eng"}  # Default to English if tessdata not found
+    
+    # Look for .traineddata files and extract language codes
+    available = set()
+    for traineddata_file in tessdata_path.glob("*.traineddata"):
+        lang_code = traineddata_file.stem
+        # Skip special files like osd (orientation) and equ (equation)
+        if lang_code not in ("osd", "equ"):
+            available.add(lang_code)
+    
+    return available if available else {"eng"}
+
+
+def _filter_available_languages(ocr_lang: str) -> str:
+    """
+    Filter language codes to only those with available training data.
+    Falls back to 'eng' for unavailable languages.
+    
+    Args:
+        ocr_lang: Tesseract language code(s), e.g. 'eng' or 'eng+pol+deu'
+    
+    Returns:
+        Filtered language code(s) with only available languages
+    """
+    available = _get_available_languages()
+    
+    # Handle multi-language input like "eng+pol+deu"
+    requested_langs = ocr_lang.split("+")
+    filtered_langs = [lang for lang in requested_langs if lang in available]
+    
+    if filtered_langs:
+        return "+".join(filtered_langs)
+    
+    # No available languages found, fall back to English
+    return "eng"
+
+
 def _has_meaningful_text(text: str, min_alphanum: int = 50) -> bool:
     """Check if text contains meaningful content (not just whitespace/symbols)."""
     if not text:
@@ -412,10 +483,18 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
                     sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
                     if sample_text.strip():
                         detected_lang = _detect_languages(sample_text)
+                        # Filter to only available languages
+                        detected_lang = _filter_available_languages(detected_lang)
                         warnings.append(f"Auto-detected language(s): {detected_lang}")
                     else:
                         detected_lang = "eng"
                 current_lang = detected_lang
+            else:
+                # Filter user-specified language(s) to available ones
+                filtered = _filter_available_languages(current_lang)
+                if filtered != current_lang:
+                    warnings.append(f"Language(s) {current_lang} not available. Using: {filtered}")
+                current_lang = filtered
             
             page_text = pytesseract.image_to_string(
                 image, 
@@ -495,9 +574,17 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
             sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6")
             if sample_text.strip():
                 current_lang = _detect_languages(sample_text)
+                # Filter to only available languages
+                current_lang = _filter_available_languages(current_lang)
                 warnings.append(f"Auto-detected language(s): {current_lang}")
             else:
                 current_lang = "eng"
+        else:
+            # Filter user-specified language(s) to available ones
+            filtered = _filter_available_languages(ocr_lang)
+            if filtered != ocr_lang:
+                warnings.append(f"Language(s) {ocr_lang} not available. Using: {filtered}")
+            current_lang = filtered
         
         text = pytesseract.image_to_string(
             image, 
