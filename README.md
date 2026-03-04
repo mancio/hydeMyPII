@@ -50,9 +50,17 @@ The app detects and replaces the following sensitive information patterns:
 pip install -e .
 ```
 
+This installs all dependencies including:
+- **Faker** - Generate realistic fake data
+- **pytesseract** & **OCRmyPDF** - OCR engines for text extraction
+- **pypdf** & **python-docx** - Document parsing
+- **Pillow** & **pdf2image** - Image processing
+- **langdetect** - Automatic language detection
+- **numpy** - Advanced image preprocessing
+
 ## OCR prerequisites
 
-Install Tesseract OCR and Poppler on your machine.
+Install Tesseract OCR and Poppler on your machine (OCRmyPDF uses Tesseract internally).
 
 **Note:** The app automatically detects these tools from common install locations on Windows, so restarting your terminal is optional (not required).
 
@@ -105,6 +113,23 @@ The app automatically detects document language when you use `--ocr` or the GUI 
 - Fallback: Uses English without errors or stopping
 
 If auto-detection doesn't work well, you can manually specify language with `--ocr-lang eng` (CLI) or dropdown menu (GUI).
+
+### OCRmyPDF for superior PDF processing
+
+**hydeMyPII uses OCRmyPDF** as the primary OCR engine for PDF documents, providing:
+
+✅ **Better accuracy** - OCRmyPDF produces higher quality text extraction than image-based OCR  
+✅ **Preserves structure** - Maintains document layout and formatting  
+✅ **Faster processing** - Optimized specifically for PDF documents  
+✅ **Multi-language support** - Same language detection as Tesseract  
+✅ **Automatic fallback** - If OCRmyPDF fails, falls back to pytesseract + pdf2image
+
+**How it works:**
+1. When you run OCR on a PDF, OCRmyPDF adds an invisible text layer
+2. Text is extracted from the enhanced PDF using pypdf
+3. If OCRmyPDF isn't available or fails, the app automatically uses the traditional image-based method
+
+**Requirements:** OCRmyPDF requires Tesseract (already installed from setup instructions above). The app handles everything automatically.
 
 ### OCR optimization for poor quality scans
 

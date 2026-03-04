@@ -22,6 +22,32 @@ _TEXT_EXTENSIONS = {
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
 
+# Initialize TESSDATA_PREFIX at module level (before any pytesseract imports)
+# This must be set before pytesseract is imported anywhere in the application
+def _init_tessdata_prefix() -> None:
+    """Set TESSDATA_PREFIX environment variable if not already set."""
+    if "TESSDATA_PREFIX" not in os.environ:
+        # Check common Tesseract installation paths for tessdata directory
+        candidates = [
+            Path("C:\\Program Files\\Tesseract-OCR\\tessdata"),
+            Path("C:\\Program Files (x86)\\Tesseract-OCR\\tessdata"),
+        ]
+        
+        program_files = os.environ.get("ProgramFiles")
+        if program_files:
+            candidates.append(Path(program_files) / "Tesseract-OCR" / "tessdata")
+        
+        for path in candidates:
+            if path.is_dir():
+                # Tesseract expects the directory path WITHOUT trailing separator
+                os.environ["TESSDATA_PREFIX"] = str(path)
+                break
+
+
+# Run at module import time
+_init_tessdata_prefix()
+
+
 def _resolve_poppler_bin_dir(override_path: str | None = None) -> str | None:
     if override_path:
         override_dir = Path(override_path)
@@ -437,12 +463,121 @@ def _extract_pdf(path: Path, ocr_enabled: bool, ocr_lang: str, poppler_path: str
     if text:
         warnings.append(f"PDF text extraction returned {len(text)} chars but insufficient readable content. Using OCR.")
     
-    ocr_result = _extract_pdf_with_ocr(path, ocr_lang=ocr_lang, poppler_path=poppler_path)
+    # Try OCRmyPDF first (better quality for PDFs)
+    ocr_result = _extract_pdf_with_ocrmypdf(path, ocr_lang=ocr_lang)
+    
+    # If OCRmyPDF fails or is unavailable, fall back to pdf2image + pytesseract
+    if not ocr_result.text.strip() or ocr_result.warnings:
+        fallback_result = _extract_pdf_with_pytesseract(path, ocr_lang=ocr_lang, poppler_path=poppler_path)
+        # Merge warnings from both attempts
+        ocr_result.warnings.extend(fallback_result.warnings)
+        # Use fallback text if OCRmyPDF produced nothing
+        if not ocr_result.text.strip() and fallback_result.text.strip():
+            ocr_result = fallback_result
+    
     ocr_result.warnings.extend(warnings)
     return ocr_result
 
 
-def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = None) -> ExtractionResult:
+def _extract_pdf_with_ocrmypdf(path: Path, ocr_lang: str | None = None) -> ExtractionResult:
+    """
+    Extract text from PDF using OCRmyPDF (preferred method for PDFs).
+    OCRmyPDF adds a text layer to the PDF, preserving document structure.
+    """
+    import tempfile
+    warnings: list[str] = []
+    
+    try:
+        import ocrmypdf
+    except ImportError:
+        return ExtractionResult(
+            source_path=path,
+            text="",
+            used_ocr=False,
+            warnings=["ocrmypdf is not installed. Install with: pip install ocrmypdf"],
+        )
+    
+    # Determine language for OCR
+    current_lang = ocr_lang if ocr_lang and ocr_lang.lower() != "auto" else "eng"
+    
+    # Filter to available languages
+    if current_lang:
+        filtered = _filter_available_languages(current_lang)
+        if filtered != current_lang and current_lang != "eng":
+            warnings.append(f"Language(s) {current_lang} not available for OCRmyPDF. Using: {filtered}")
+        current_lang = filtered
+    
+    # Create temporary output PDF
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
+        tmp_path = Path(tmp_file.name)
+    
+    try:
+        # Run OCRmyPDF to add text layer
+        ocrmypdf.ocr(
+            str(path),
+            str(tmp_path),
+            language=current_lang,
+            skip_text=False,  # OCR even if text exists
+            force_ocr=True,   # Force OCR on all pages
+            optimize=0,       # No optimization (faster)
+            progress_bar=False,
+            use_threads=True,
+        )
+        
+        # Extract text from OCR'd PDF
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return ExtractionResult(
+                source_path=path,
+                text="",
+                used_ocr=False,
+                warnings=["pypdf is not installed."],
+            )
+        
+        reader = PdfReader(tmp_path)
+        extracted_pages = []
+        for page in reader.pages:
+            extracted_pages.append(page.extract_text() or "")
+        
+        text = "\n\n".join(extracted_pages).strip()
+        
+        if not text:
+            warnings.append("OCRmyPDF completed but extracted no text")
+        
+        return ExtractionResult(
+            source_path=path,
+            text=text,
+            used_ocr=True,
+            warnings=warnings
+        )
+        
+    except Exception as exc:
+        warnings.append(f"OCRmyPDF failed: {str(exc)}")
+        return ExtractionResult(
+            source_path=path,
+            text="",
+            used_ocr=False,
+            warnings=warnings
+        )
+    finally:
+        # Clean up temporary file
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except:
+                pass
+
+
+def _build_tesseract_config(base_config: str = "--psm 6 --oem 3") -> str:
+    """
+    Build Tesseract config string. 
+    TESSDATA_PREFIX env var handles the data directory location.
+    """
+    return base_config
+
+
+def _extract_pdf_with_pytesseract(path: Path, ocr_lang: str, poppler_path: str | None = None) -> ExtractionResult:
     warnings: list[str] = []
     poppler_bin = _resolve_poppler_bin_dir(override_path=poppler_path)
 
@@ -500,7 +635,7 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
             if not ocr_lang or ocr_lang.lower() == "auto":
                 if detected_lang is None:
                     # Quick OCR pass to get sample text for detection
-                    sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6 --oem 3")
+                    sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config())
                     if sample_text.strip():
                         detected_lang = _detect_languages(sample_text)
                         # Filter to only available languages
@@ -519,7 +654,7 @@ def _extract_pdf_with_ocr(path: Path, ocr_lang: str, poppler_path: str | None = 
             page_text = pytesseract.image_to_string(
                 image, 
                 lang=current_lang,
-                config="--psm 6 --oem 3"  # PSM 6: single column, OEM 3: both legacy and LSTM
+                config=_build_tesseract_config()  # Includes tessdata-dir and PSM/OEM settings
             )
             pages_text.append(page_text)
             
@@ -591,7 +726,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         
         if not ocr_lang or ocr_lang.lower() == "auto":
             # Quick OCR pass with English to get sample text for detection
-            sample_text = pytesseract.image_to_string(image, lang="eng", config="--psm 6 --oem 3")
+            sample_text = pytesseract.image_to_string(image, lang="eng", config=_build_tesseract_config())
             if sample_text.strip():
                 current_lang = _detect_languages(sample_text)
                 # Filter to only available languages
@@ -609,7 +744,7 @@ def _extract_image_ocr(path: Path, ocr_lang: str) -> ExtractionResult:
         text = pytesseract.image_to_string(
             image, 
             lang=current_lang,
-            config="--psm 6 --oem 3"  # PSM 6: single column, OEM 3: both legacy and LSTM
+            config=_build_tesseract_config()  # Includes tessdata-dir and PSM/OEM settings
         )
         
         if not text.strip():
